@@ -4,8 +4,8 @@ import json
 import pymorphy2
 import re
 from nltk import sent_tokenize, word_tokenize, pos_tag
-import psycopg2
-from config import host,user,password,db_name,port
+import pika
+import tempfile
 
 def normalize_word(word):
     """
@@ -418,10 +418,27 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
 
 
 if __name__ == "__main__":
-    input_file = sys.argv[1]
-    db_file = sys.argv[2]
-    similarity_border = float(sys.argv[3])
-    _, target_fragments = main_check(input_file, db_file, similarity_border)
-    print(target_fragments)
+    db_file = sys.argv[1]
+    similarity_border = float(sys.argv[2])
 
+    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost', heartbeat=900))
+    channel = connection.channel()
+    queue = channel.queue_declare('texts_analysis')
+    queue_name = queue.method.queue
+
+    def callback(ch, method, properties, body):
+        payload = json.loads(body.decode())
+
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as temp_file:
+            json.dump(payload, temp_file, ensure_ascii=False)
+            temp_file_name = temp_file.name
+        
+
+        # Прямо передаем строку JSON в функцию main_check
+        _, target_fragments = main_check(temp_file_name, db_file, similarity_border)
+        print(target_fragments)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+    channel.basic_consume(on_message_callback=callback, queue=queue_name)
+    channel.start_consuming()
 
