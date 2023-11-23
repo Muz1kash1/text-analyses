@@ -6,6 +6,7 @@ import re
 from nltk import sent_tokenize, word_tokenize, pos_tag
 import pika
 import tempfile
+from database import DatabaseLegacy
 
 
 def pymorphy2_311_hotfix():
@@ -303,13 +304,13 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
     return dictionary
 
 
-def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5, id_legend=[6, 3]):
+def main_check(input_filename, db, similarity_border=0.1, max_series=5, id_legend=[6, 3]):
     """
     Основная функция для проверки схожести фрагментов текста с эталонами и обновления базы данных.
 
     Параметры:
     - input_filename (str): Имя файла с входными данными в формате JSON.
-    - db_filename (str): Имя файла базы данных с эталонами в формате JSON.
+    - db (str): Обертка над Postgres клиентом.
     - similarity_border (float): Порог схожести для определения, является ли фрагмент текста целевым.
     - max_series (int): Максимальное количество предложений в одном фрагменте текста.
     - id_legend (list): Список, содержащий два элемента - длину идентификатора текста и порядкового номера фрагмента.
@@ -331,15 +332,16 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
             texts_data[item['id']] = [item['text'], item['label']]
 
     # Чтение данных эталонов из файла JSON
-    etalons_data = {}
-    with open(db_filename, "r", encoding='utf-8') as read_file:
-        json_data = json.load(read_file)
-        for item in json_data:
-            order_1 = [part.split(',') for part in item['order1'].split(';')]
-            order_2 = [part.split(',') for part in item['order2'].split(';')]
-            order_3 = [part.split(',') for part in item['order3'].split(';')]
-            if all([order_1, order_2, order_3]):
-                etalons_data[item['id']] = [order_1, order_2, order_3, item['weight']]
+    etalons_data = db.get_reference_samples()
+    # etalons_data = {}
+    # with open(db_filename, "r", encoding='utf-8') as read_file:
+    #     json_data = json.load(read_file)
+    #     for item in json_data:
+    #         order_1 = [part.split(',') for part in item['order1'].split(';')]
+    #         order_2 = [part.split(',') for part in item['order2'].split(';')]
+    #         order_3 = [part.split(',') for part in item['order3'].split(';')]
+    #         if all([order_1, order_2, order_3]):
+    #             etalons_data[item['id']] = [order_1, order_2, order_3, item['weight']]
 
     # Инициализация словарей и списков для хранения данных
     dict_1, dict_2, dict_3 = {}, {}, {}
@@ -395,15 +397,24 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
 
     # Обновление данных базы данных
     current_data = []
-    with open(db_filename, "r", encoding='utf-8') as file:
-        data = json.load(file)
-        for item in data:
-            if item['id'] in new_etalon_weights:
-                if new_etalon_weights[item['id']]:
-                    current_data.append({'id': item['id'], 'order1': item['order1'], 'order2': item['order2'],
-                                         'order3': item['order3'], 'weight': new_etalon_weights[item['id']]})
+    data = db.get_reference_samples_scuffed()
+    for item in data:
+        if item["id"] in new_etalon_weights:
+            if new_etalon_weights[item["id"]]:
+                current_data.append({'id': item['id'], 'order1': item['order1'], 'order2': item['order2'],
+                                     'order3': item['order3'], 'weight': new_etalon_weights[item['id']]})
             else:
                 current_data.append(item)
+    # current_data = []
+    # with open(db_filename, "r", encoding='utf-8') as file:
+    #     data = json.load(file)
+    #     for item in data:
+    #         if item['id'] in new_etalon_weights:
+    #             if new_etalon_weights[item['id']]:
+    #                 current_data.append({'id': item['id'], 'order1': item['order1'], 'order2': item['order2'],
+    #                                      'order3': item['order3'], 'weight': new_etalon_weights[item['id']]})
+    #         else:
+    #             current_data.append(item)
 
     # Добавление новых эталонных данных
     for new_etalon in new_etalons_data:
@@ -411,8 +422,9 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
             current_data.append(new_etalon)
 
     # Запись обновленных данных в файл базы данных
-    with open(db_filename, "w", encoding='utf-8') as output_file:
-        json.dump(current_data, output_file, ensure_ascii=False)
+    db.insert_new_samples(current_data)
+    # with open(db_filename, "w", encoding='utf-8') as output_file:
+    #     json.dump(current_data, output_file, ensure_ascii=False)
 
     # Формирование результата - текстов и целевых фрагментов
     target_texts = {}
@@ -430,10 +442,12 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
     return target_texts, target_fragments
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
+    similarity_border = float(sys.argv[1])
     pymorphy2_311_hotfix()
-    db_file = sys.argv[1]
-    similarity_border = float(sys.argv[2])
+    
+    db = DatabaseLegacy("postgres", "password", "postgres", "localhost", 5432)
+    db.load_json_data("db.json")
 
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost', heartbeat=900))
     channel = connection.channel()
@@ -449,7 +463,7 @@ if __name__ == "__main__":
         
 
         # Прямо передаем строку JSON в функцию main_check
-        _, target_fragments = main_check(temp_file_name, db_file, similarity_border)
+        _, target_fragments = main_check(temp_file_name, db, similarity_border)
         print(target_fragments)
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
