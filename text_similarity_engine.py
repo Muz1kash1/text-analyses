@@ -7,7 +7,8 @@ from nltk import sent_tokenize, word_tokenize, pos_tag
 import pika
 import tempfile
 from database import DatabaseLegacy
-
+from dotenv import load_dotenv
+import os
 
 def pymorphy2_311_hotfix():
     from inspect import getfullargspec
@@ -442,11 +443,21 @@ def main_check(input_filename, db, similarity_border=0.1, max_series=5, id_legen
     return target_texts, target_fragments
 
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
+    # Загрузить переменные окружения из файла .env
+    load_dotenv()
+
+    # Получить значения переменных окружения
+    db_user = os.getenv("DB_USER")
+    db_password = os.getenv("DB_PASSWORD")
+    db_name = os.getenv("DB_NAME")
+    db_host = os.getenv("DB_HOST")
+    db_port = int(os.getenv("DB_PORT"))
+
     similarity_border = float(sys.argv[1])
     pymorphy2_311_hotfix()
     
-    db = DatabaseLegacy("postgres", "password", "postgres", "localhost", 5432)
+    db = DatabaseLegacy(db_user, db_password, db_name, db_host, db_port)
     db.load_json_data("db.json")
 
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost', heartbeat=900))
