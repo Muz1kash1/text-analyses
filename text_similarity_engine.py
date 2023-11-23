@@ -4,8 +4,6 @@ import json
 import pymorphy2
 import re
 from nltk import sent_tokenize, word_tokenize, pos_tag
-import psycopg2
-from config import host,user,password,db_name,port
 
 def normalize_word(word):
     """
@@ -28,7 +26,7 @@ def normalize_word(word):
     parsed_word = morph.parse(word)[0]
 
     # Возвращение нормальной формы слова
-    return parsed_word.normal_form
+    return parsed_word[2]
 
 
 def split_text_into_fragments(text, max_series=5):
