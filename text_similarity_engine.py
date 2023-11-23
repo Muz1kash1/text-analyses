@@ -4,8 +4,23 @@ import json
 import pymorphy2
 import re
 from nltk import sent_tokenize, word_tokenize, pos_tag
+from database import DatabaseLegacy
 
-def normalize_word(word):
+
+def pymorphy2_311_hotfix():
+    from inspect import getfullargspec
+    from pymorphy2.units.base import BaseAnalyzerUnit
+
+    def _get_param_names_311(klass):
+        if klass.__init__ is object.__init__:
+            return []
+        args = getfullargspec(klass.__init__).args
+        return sorted(args[1:])
+
+    setattr(BaseAnalyzerUnit, '_get_param_names', _get_param_names_311)
+
+
+def normalize_word(word: str) -> str:
     """
     Нормализует слово, приводя его к нормальной (базовой) форме с использованием морфологического анализатора.
 
@@ -29,7 +44,7 @@ def normalize_word(word):
     return parsed_word[2]
 
 
-def split_text_into_fragments(text, max_series=5):
+def split_text_into_fragments(text: str, max_series=5) -> list:
     """
     Разделяет текст на фрагменты, используя предложения как базовые единицы.
 
@@ -68,7 +83,7 @@ def split_text_into_fragments(text, max_series=5):
     return fragments
 
 
-def extract_first_signs(fragment):
+def extract_first_signs(fragment: list) -> list:
     """
     Извлекает признаки первого уровня из фрагмента текста.
 
@@ -103,7 +118,7 @@ def extract_first_signs(fragment):
     return signs
 
 
-def extract_second_signs(signs_list):
+def extract_second_signs(signs_list: list) -> list:
     """
     Извлекает признаки второго уровня из списка признаков первого уровня.
 
@@ -142,7 +157,7 @@ def extract_second_signs(signs_list):
     return signs
 
 
-def extract_third_signs(signs_list):
+def extract_third_signs(signs_list: list) -> list:
     """
     Извлекает признаки третьего уровня из списка признаков второго уровня.
 
@@ -181,7 +196,7 @@ def extract_third_signs(signs_list):
     return signs
 
 
-def generate_signatures(fragment):
+def generate_signatures(fragment: list) -> list:
     """
     Генерирует сигнатуры для фрагмента текста, используя функции извлечения признаков разных уровней.
 
@@ -208,7 +223,7 @@ def generate_signatures(fragment):
     return [first_signs_list, second_signs_list, third_signs_list]
 
 
-def compare_signatures(signature1, signature2):
+def compare_signatures(signature1: list, signature2: list) -> list:
     """
     Сравнивает две сигнатуры и возвращает вес совпадающих признаков и общее количество признаков.
 
@@ -237,7 +252,7 @@ def compare_signatures(signature1, signature2):
     return [weight, total_signs]
 
 
-def get_text_id(fragment_id, text_id_length=6):
+def get_text_id(fragment_id: str, text_id_length=6) -> str:
     """
     Получает идентификатор текста из идентификатора фрагмента.
 
@@ -256,7 +271,7 @@ def get_text_id(fragment_id, text_id_length=6):
     return fragment_id[:text_id_length]
 
 
-def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
+def update_dictionary(sign_list: list, etalon_fragment: list, fragment_id: str, dictionary: dict) -> dict:
     """
     Обновляет словарь весов для фрагмента текста на основе сравнения признаков с эталонным фрагментом.
 
@@ -288,7 +303,7 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
     return dictionary
 
 
-def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5, id_legend=[6, 3]):
+def main_check(input_filename: str, db: DatabaseLegacy, similarity_border=0.1, max_series=5, id_legend=[6, 3]):
     """
     Основная функция для проверки схожести фрагментов текста с эталонами и обновления базы данных.
 
@@ -315,16 +330,17 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
         for item in json_data:
             texts_data[item['id']] = [item['text'], item['label']]
 
-    # Чтение данных эталонов из файла JSON
-    etalons_data = {}
-    with open(db_filename, "r", encoding='utf-8') as read_file:
-        json_data = json.load(read_file)
-        for item in json_data:
-            order_1 = [part.split(',') for part in item['order1'].split(';')]
-            order_2 = [part.split(',') for part in item['order2'].split(';')]
-            order_3 = [part.split(',') for part in item['order3'].split(';')]
-            if all([order_1, order_2, order_3]):
-                etalons_data[item['id']] = [order_1, order_2, order_3, item['weight']]
+    # Чтение данных эталонов из Postgres
+    etalons_data = db.get_reference_samples()
+    # etalons_data = {}
+    # with open(db_filename, "r", encoding='utf-8') as read_file:
+    #     json_data = json.load(read_file)
+    #     for item in json_data:
+    #         order_1 = [part.split(',') for part in item['order1'].split(';')]
+    #         order_2 = [part.split(',') for part in item['order2'].split(';')]
+    #         order_3 = [part.split(',') for part in item['order3'].split(';')]
+    #         if all([order_1, order_2, order_3]):
+    #             etalons_data[item['id']] = [order_1, order_2, order_3, item['weight']]
 
     # Инициализация словарей и списков для хранения данных
     dict_1, dict_2, dict_3 = {}, {}, {}
@@ -380,15 +396,23 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
 
     # Обновление данных базы данных
     current_data = []
-    with open(db_filename, "r", encoding='utf-8') as file:
-        data = json.load(file)
-        for item in data:
-            if item['id'] in new_etalon_weights:
-                if new_etalon_weights[item['id']]:
-                    current_data.append({'id': item['id'], 'order1': item['order1'], 'order2': item['order2'],
-                                         'order3': item['order3'], 'weight': new_etalon_weights[item['id']]})
+    data = db.get_reference_samples_scuffed()
+    for item in data:
+        if item["id"] in new_etalon_weights:
+            if new_etalon_weights[item["id"]]:
+                current_data.append({'id': item['id'], 'order1': item['order1'], 'order2': item['order2'],
+                                     'order3': item['order3'], 'weight': new_etalon_weights[item['id']]})
             else:
                 current_data.append(item)
+    # with open(db_filename, "r", encoding='utf-8') as file:
+    #     data = json.load(file)
+    #     for item in data:
+    #         if item['id'] in new_etalon_weights:
+    #             if new_etalon_weights[item['id']]:
+    #                 current_data.append({'id': item['id'], 'order1': item['order1'], 'order2': item['order2'],
+    #                                      'order3': item['order3'], 'weight': new_etalon_weights[item['id']]})
+    #         else:
+    #             current_data.append(item)
 
     # Добавление новых эталонных данных
     for new_etalon in new_etalons_data:
@@ -396,8 +420,9 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
             current_data.append(new_etalon)
 
     # Запись обновленных данных в файл базы данных
-    with open(db_filename, "w", encoding='utf-8') as output_file:
-        json.dump(current_data, output_file, ensure_ascii=False)
+    db.insert_new_samples(current_data)
+    # with open(db_filename, "w", encoding='utf-8') as output_file:
+    #     json.dump(current_data, output_file, ensure_ascii=False)
 
     # Формирование результата - текстов и целевых фрагментов
     target_texts = {}
@@ -416,10 +441,13 @@ def main_check(input_filename, db_filename, similarity_border=0.1, max_series=5,
 
 
 if __name__ == "__main__":
+    pymorphy2_311_hotfix()
+    db = DatabaseLegacy("postgres", "password", "postgres", "localhost", 5432)
+    db.clear_table
+    db.load_json_data("db.json")
     input_file = sys.argv[1]
-    db_file = sys.argv[2]
-    similarity_border = float(sys.argv[3])
-    _, target_fragments = main_check(input_file, db_file, similarity_border)
+    similarity_border = float(sys.argv[2])
+    _, target_fragments = main_check(input_file, db, similarity_border)
     print(target_fragments)
 
 
