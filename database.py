@@ -1,3 +1,4 @@
+import json
 import psycopg2
 from uuid import UUID 
 import psycopg2.extras
@@ -22,14 +23,31 @@ class DatabaseLegacy:
             cursor.execute("SELECT id, order1, order2, order3, weight FROM reference_samples")
             raw_data = cursor.fetchall()
             for data in raw_data:
-                result[data[0]] = [data[1], data[2], data[3], data[4]]
+                result[data[0]] = [[data[1].split(",")],
+                                   [data[2].split(",")],
+                                   [data[3].split(",")],
+                                   data[4]]
+        return result
+    
+    def get_reference_samples_scuffed(self) -> list[dict]:
+        result = []
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT id, order1, order2, order3, weight FROM reference_samples")
+            raw_data = cursor.fetchall()
+            for data in raw_data:
+                result.append({"id": data[0], "order1": data[1], "order2": data[2], "order3": data[3], "weight": data[4]})
         return result
 
-    def insert_new_samples(self, samples: dict):
+    def insert_new_samples(self, samples: list[dict]):
         with self.connection.cursor() as cursor:
-            for key, value in samples.items():
-                cursor.execute("INSERT INTO reference_samples (id, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s", (key, value[0], value[1], value[2], value[3], value[0], value[1], value[2], value[3]))
+            for sample in samples:
+                cursor.execute("INSERT INTO reference_samples (id, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s", (sample["id"], sample["order1"], sample["order2"], sample["order3"], sample["weight"], sample["order1"], sample["order2"], sample["order3"], sample["weight"]))
             self.connection.commit()
+
+    def load_json_data(self, json_file_name):
+        with open(json_file_name, "r", encoding="utf-8") as file:
+            json_data = json.load(file)
+            self.insert_new_samples(json_data)
 
     def __del__(self):
         self.connection.close()
@@ -82,10 +100,15 @@ class Database:
 if __name__ == "__main__":
     db = DatabaseLegacy("postgres", "password", "postgres", "localhost", 5432)
     db.clear_table()
-    data = dict()
-    data["1234"] = ["bruh", "kwuh", "jmih", 0.765]
-    data["1234"] = ["bruh", "kwuh", "jmih", 0.365]
-    data["12"] = ["bruh", "kwuh", "jmih", 0.765]
-    db.insert_new_samples(data)
-    print(db.get_reference_samples())
+    db.load_json_data("db.json")
+    for i, k in db.get_reference_samples().items():
+        print(f"{i}: {k}")
+    # print(db.get_reference_samples())
+    # data = []
+    # data.append({"id": "1234", "order1": "asda", "order2": "dhtye", "order3": "mfgk", "weight": 0.375})
+    # data.append({"id": "123", "order1": "asda", "order2": "dhtye", "order3": "mfgk", "weight": 0.875})
+    # data.append({"id": "1234", "order1": "asda", "order2": "dhtye", "order3": "mfgk", "weight": 0.675})
+    # db.insert_new_samples(data)
+    # print(db.get_reference_samples())
+    # print(db.get_reference_samples_scuffed())
 
