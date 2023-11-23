@@ -23,10 +23,10 @@ class DatabaseLegacy:
             cursor.execute("SELECT id, order1, order2, order3, weight FROM reference_samples")
             raw_data = cursor.fetchall()
             for data in raw_data:
-                result[data[0]] = [[data[1].split(",")],
-                                   [data[2].split(",")],
-                                   [data[3].split(",")],
-                                   data[4]]
+                order_1 = [part.split(",") for part in data[1].split(";")]
+                order_2 = [part.split(",") for part in data[2].split(";")]
+                order_3 = [part.split(",") for part in data[3].split(";")]
+                result[data[0]] = [order_1, order_2, order_3]
         return result
     
     def get_reference_samples_scuffed(self) -> list[dict]:
