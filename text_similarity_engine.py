@@ -8,6 +8,19 @@ import pika
 import tempfile
 from database import DatabaseLegacy
 
+
+def pymorphy2_311_hotfix():
+    from inspect import getfullargspec
+    from pymorphy2.units.base import BaseAnalyzerUnit
+
+    def _get_param_names_311(klass):
+        if klass.__init__ is object.__init__:
+            return []
+        args = getfullargspec(klass.__init__).args
+        return sorted(args[1:])
+
+    setattr(BaseAnalyzerUnit, '_get_param_names', _get_param_names_311)
+
 def normalize_word(word):
     """
     Нормализует слово, приводя его к нормальной (базовой) форме с использованием морфологического анализатора.
@@ -29,7 +42,7 @@ def normalize_word(word):
     parsed_word = morph.parse(word)[0]
 
     # Возвращение нормальной формы слова
-    return parsed_word.normal_form
+    return parsed_word[2]
 
 
 def split_text_into_fragments(text, max_series=5):
@@ -429,10 +442,12 @@ def main_check(input_filename, db, similarity_border=0.1, max_series=5, id_legen
     return target_texts, target_fragments
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
+    similarity_border = float(sys.argv[1])
+    pymorphy2_311_hotfix()
+    
     db = DatabaseLegacy("postgres", "password", "postgres", "localhost", 5432)
     db.load_json_data("db.json")
-    similarity_border = float(sys.argv[1])
 
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost', heartbeat=900))
     channel = connection.channel()
