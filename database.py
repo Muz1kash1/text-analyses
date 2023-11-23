@@ -16,25 +16,19 @@ class DatabaseLegacy:
             cursor.execute("TRUNCATE TABLE reference_samples")
             self.connection.commit()
 
-    def get_reference_samples(self) -> list[dict]:
-        result = []
+    def get_reference_samples(self) -> dict:
+        result = dict()
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT id, order1, order2, order3, weight FROM reference_samples")
             raw_data = cursor.fetchall()
             for data in raw_data:
-                sample = dict()
-                sample["id"] = data[0]
-                sample["order1"] = data[1]
-                sample['order2'] = data[2]
-                sample['order3'] = data[3]
-                sample['weight'] = data[4]
-                result.append(sample)
+                result[data[0]] = [data[1], data[2], data[3], data[4]]
         return result
 
-    def insert_new_samples(self, samples: list[dict]):
+    def insert_new_samples(self, samples: dict):
         with self.connection.cursor() as cursor:
-            for sample in samples:
-                cursor.execute("INSERT INTO reference_samples (id, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s", (sample["id"], sample["order1"], sample["order2"], sample["order3"], sample["weight"], sample["order1"], sample["order2"], sample["order3"], sample["weight"]))
+            for key, value in samples.items():
+                cursor.execute("INSERT INTO reference_samples (id, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s", (key, value[0], value[1], value[2], value[3], value[0], value[1], value[2], value[3]))
             self.connection.commit()
 
     def __del__(self):
@@ -88,10 +82,10 @@ class Database:
 if __name__ == "__main__":
     db = DatabaseLegacy("postgres", "password", "postgres", "localhost", 5432)
     db.clear_table()
-    data = []
-    data.append({"id":"1234", "order1": "bruh", "order2": "kwuh", "order3": "jmih", "weight": 0.356})
-    data.append({"id":"1234", "order1": "bruh", "order2": "kwuh", "order3": "jmih", "weight": 0.456})
-    data.append({"id":"1234234", "order1": "bruh", "order2": "kwuh", "order3": "jmih", "weight": 0.356})
+    data = dict()
+    data["1234"] = ["bruh", "kwuh", "jmih", 0.765]
+    data["1234"] = ["bruh", "kwuh", "jmih", 0.365]
+    data["12"] = ["bruh", "kwuh", "jmih", 0.765]
     db.insert_new_samples(data)
     print(db.get_reference_samples())
 
