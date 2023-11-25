@@ -1,0 +1,43 @@
+version: '3.9'
+services:
+  rabbitmq:
+    container_name: "rabbitmq"
+    image: rabbitmq:3-management-alpine
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    ports:
+      # AMQP protocol port
+      - '5672:5672'
+      # HTTP management UI
+      - '15672:15672'
+    volumes:
+      - "./rabbitmq:/rabbitmq"
+    restart: always
+    
+  postgres:
+    container_name: postgres_container
+    image: postgres:15.2-alpine
+    environment:
+      POSTGRES_DB: "testDb"
+      POSTGRES_USER: "EngineUser"
+      POSTGRES_PASSWORD: "Bstu31"
+    ports:
+      - "5435:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL","pg_isready -U EngineUser -d testDb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 3G
+volumes:
+  db:
+    driver: local
