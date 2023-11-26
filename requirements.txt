@@ -7,3 +7,6 @@ pymorphy2==0.9.1
 pymorphy2-dicts-ru==2.4.417127.4579844
 regex==2023.10.3
 tqdm==4.66.1
+pika==1.3.2
+python-dotenv==1.0.0
+psycopg2==2.9.9
