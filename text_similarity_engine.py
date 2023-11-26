@@ -453,14 +453,15 @@ if __name__ == "__main__":
     db_name = os.getenv("DB_NAME")
     db_host = os.getenv("DB_HOST")
     db_port = int(os.getenv("DB_PORT"))
+    rabbit_host = os.getenv("MQ_HOST_NAME")
 
     similarity_border = float(sys.argv[1])
     pymorphy2_311_hotfix()
     
     db = DatabaseLegacy(db_user, db_password, db_name, db_host, db_port)
-    db.load_json_data("db.json")
+    #db.load_json_data("db.json")
 
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost', heartbeat=900))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host,heartbeat=900))
     channel = connection.channel()
     queue = channel.queue_declare('texts_analysis')
     queue_name = queue.method.queue

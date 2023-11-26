@@ -2,6 +2,7 @@ version: '3.9'
 services:
   rabbitmq:
     container_name: "rabbitmq"
+    hostname: "rabbit"
     image: rabbitmq:3-management-alpine
     environment:
       - RABBITMQ_DEFAULT_USER=guest
@@ -38,6 +39,15 @@ services:
         limits:
           cpus: '1'
           memory: 3G
+
+  textanalyser:
+    container_name: "textanalyser"
+    build: .
+    ports:
+      - "5000:5000"
+    depends_on:
+      - rabbitmq
+      - postgres
 volumes:
   db:
     driver: local
