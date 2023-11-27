@@ -41,13 +41,12 @@ services:
           memory: 3G
 
   textanalyser:
-    container_name: "textanalyser"
     build: .
-    ports:
-      - "5000:5000"
     depends_on:
       - rabbitmq
       - postgres
+    deploy:
+      replicas: 3
 volumes:
   db:
     driver: local
