@@ -53,9 +53,10 @@ class DatabaseLegacy:
         self.connection.close()
 
 class ReferenceSamples():
-    def __init__(self, id: UUID, order1: str, order2: str, order3: str, weight: float):
+    def __init__(self, id: UUID, part: int, order1: str, order2: str, order3: str, weight: float):
         psycopg2.extras.register_uuid()
         self.id = id
+        self.part = part
         self.order1 = order1
         self.order2 = order2
         self.order3 = order3
@@ -70,7 +71,7 @@ class Database:
         self.connection = psycopg2.connect(dbname=db_name, user=user_name, password=password, host=host, port=port)
         self.connection.autocommit = True
         cursor = self.connection.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS reference_samples (id UUID PRIMARY KEY, order1 TEXT, order2 TEXT, order3 TEXT, weight FLOAT8)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS reference_samples (id UUID PRIMARY KEY, part ,order1 TEXT, order2 TEXT, order3 TEXT, weight FLOAT8)")
         cursor.close()
         self.connection.autocommit = False
 
@@ -82,16 +83,16 @@ class Database:
     def get_reference_samples(self) -> list[ReferenceSamples]:
         result = []
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, order1, order2, order3, weight FROM reference_samples")
+            cursor.execute("SELECT id, part, order1, order2, order3, weight FROM reference_samples")
             raw_data = cursor.fetchall()
             for data in raw_data:
-                result.append(ReferenceSamples(data[0],data[1],data[2],data[3],data[4]))
+                result.append(ReferenceSamples(data[0],data[1],data[2],data[3],data[4],data[5]))
         return result
 
     def insert_new_samples(self, samples: list[ReferenceSamples]):
         with self.connection.cursor() as cursor:
             for sample in samples:
-                cursor.execute("INSERT INTO reference_samples (id, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s", (sample.id, sample.order1, sample.order2, sample.order3, sample.weight, sample.order1, sample.order2, sample.order3, sample.weight))
+                cursor.execute("INSERT INTO reference_samples (id, part, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s, part=%s", (sample.id, sample.part, sample.order1, sample.order2, sample.order3, sample.weight, sample.order1, sample.order2, sample.order3, sample.weight, sample.part))
             self.connection.commit()
 
     def __del__(self):
