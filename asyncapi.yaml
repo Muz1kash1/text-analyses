@@ -1,0 +1,29 @@
+asyncapi: 3.0.0
+info:
+  title: RabbitMQ Text Analysis API
+  version: 1.0.0
+channels:
+  texts_analysis:
+    address: texts_analysis
+    messages:
+      subscribe.message:
+        payload:
+          type: object
+          properties:
+            id:
+              type: string
+              example: '000001'
+            text:
+              type: string
+              example: Ваш текст для анализа
+            label:
+              type: string
+              example: '?'
+    x-handler: your_module.consume
+operations:
+  texts_analysis.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/texts_analysis'
+    messages:
+      - $ref: '#/channels/texts_analysis/messages/subscribe.message'
