@@ -2,7 +2,7 @@ name: AsyncAPI documentation publishing on github pages
 
 on:
   push:
-    branches: [master]
+    branches: [main]
 
 jobs:
   generate:
