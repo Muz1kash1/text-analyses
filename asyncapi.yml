@@ -10,9 +10,6 @@ channels:
         payload:
           type: object
           properties:
-            id:
-              type: string
-              example: '000001'
             text:
               type: string
               example: Ваш текст для анализа
