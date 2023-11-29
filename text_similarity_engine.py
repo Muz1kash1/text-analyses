@@ -1,5 +1,6 @@
 # Импорт необходимых библиотек и модулей
 import json
+import logging
 import os
 import re
 import sys
@@ -398,7 +399,7 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
                 # Обработка фрагментов текущего текста
                 if etalon.id == text_sample.id:
                     break
-
+                # Изменение словарей в 3 разных потоках
                 with ProcessPoolExecutor(max_workers=3) as executor:
                     dict_1 = executor.submit(
                         update_dictionary,
@@ -480,6 +481,9 @@ if __name__ == "__main__":
 
     similarity_border = float(sys.argv[1])
     pymorphy2_311_hotfix()
+    # Настройка логера
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
     db = Database(db_user, db_password, db_name, db_host, db_port)
     # db.load_json_data("db.json")
@@ -502,7 +506,9 @@ if __name__ == "__main__":
 
         # Прямо передаем строку JSON в функцию main_check
         _, target_fragments = main_check(temp_file_name, db, similarity_border)
-        print(target_fragments)
+        # Логирование результата обработки
+        logger.info(target_fragments)
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     channel.basic_consume(on_message_callback=callback, queue=queue_name)
