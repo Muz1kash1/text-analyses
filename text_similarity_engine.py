@@ -1,19 +1,24 @@
 # Импорт необходимых библиотек и модулей
-import sys
 import json
-import pymorphy2
-import re
-from nltk import sent_tokenize, word_tokenize, pos_tag
-import pika
-import tempfile
-from database import Database, ReferenceSample
-from dotenv import load_dotenv
+import logging
 import os
+import re
+import sys
+import tempfile
 import uuid
+from concurrent.futures import ProcessPoolExecutor
+
+import pika
+import pymorphy2
+from dotenv import load_dotenv
+from nltk import pos_tag, sent_tokenize, word_tokenize
+
+from database import Database, ReferenceSample
 
 
 def pymorphy2_311_hotfix():
     from inspect import getfullargspec
+
     from pymorphy2.units.base import BaseAnalyzerUnit
 
     def _get_param_names_311(klass):
@@ -394,15 +399,29 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
                 # Обработка фрагментов текущего текста
                 if etalon.id == text_sample.id:
                     break
-                dict_1 = update_dictionary(
-                    new_reference_sample.order1, etalon.order1, fragment_id, dict_1
-                )
-                dict_2 = update_dictionary(
-                    new_reference_sample.order2, etalon.order2, fragment_id, dict_2
-                )
-                dict_3 = update_dictionary(
-                    new_reference_sample.order3, etalon.order3, fragment_id, dict_3
-                )
+                # Изменение словарей в 3 разных потоках
+                with ProcessPoolExecutor(max_workers=3) as executor:
+                    dict_1 = executor.submit(
+                        update_dictionary,
+                        new_reference_sample.order1,
+                        etalon.order1,
+                        fragment_id,
+                        dict_1,
+                    ).result()
+                    dict_2 = executor.submit(
+                        update_dictionary,
+                        new_reference_sample.order2,
+                        etalon.order2,
+                        fragment_id,
+                        dict_2,
+                    ).result()
+                    dict_3 = executor.submit(
+                        update_dictionary,
+                        new_reference_sample.order3,
+                        etalon.order3,
+                        fragment_id,
+                        dict_3,
+                    ).result()
 
     # Инициализация словаря весов для фрагментов текста
     target_fragments: list[ReferenceSample] = []
@@ -462,6 +481,9 @@ if __name__ == "__main__":
 
     similarity_border = float(sys.argv[1])
     pymorphy2_311_hotfix()
+    # Настройка логера
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
     db = Database(db_user, db_password, db_name, db_host, db_port)
     # db.load_json_data("db.json")
@@ -484,7 +506,9 @@ if __name__ == "__main__":
 
         # Прямо передаем строку JSON в функцию main_check
         _, target_fragments = main_check(temp_file_name, db, similarity_border)
-        print(target_fragments)
+        # Логирование результата обработки
+        logger.info(target_fragments)
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     channel.basic_consume(on_message_callback=callback, queue=queue_name)
