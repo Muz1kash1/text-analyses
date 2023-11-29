@@ -478,8 +478,9 @@ if __name__ == "__main__":
     db_host = val if (val := os.getenv("DB_HOST")) is not None else "postgres"
     db_port = int(val) if (val := os.getenv("DB_PORT")) is not None else 5432
     rabbit_host = val if (val := os.getenv("MQ_HOST_NAME")) is not None else "I dunno"
-
-    similarity_border = float(sys.argv[1])
+    similarity_border = (
+        float(val) if (val := os.getenv("SIMILARITY_BORDER")) is not None else 0.7
+    )
     pymorphy2_311_hotfix()
     # Настройка логера
     logging.basicConfig(level=logging.INFO)
