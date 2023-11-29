@@ -4,87 +4,6 @@ from uuid import UUID, uuid4
 import psycopg2.extras
 
 
-class DatabaseLegacy:
-    def __init__(
-        self, user_name: str, password: str, db_name: str, host: str, port: int
-    ):
-        self.connection = psycopg2.connect(
-            dbname=db_name, user=user_name, password=password, host=host, port=port
-        )
-        self.connection.autocommit = True
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "CREATE TABLE IF NOT EXISTS reference_samples (id TEXT PRIMARY KEY, order1 TEXT, order2 TEXT, order3 TEXT, weight FLOAT8)"
-        )
-        cursor.close()
-        self.connection.autocommit = False
-
-    def clear_table(self):
-        with self.connection.cursor() as cursor:
-            cursor.execute("TRUNCATE TABLE reference_samples")
-            self.connection.commit()
-
-    def get_reference_samples(self) -> dict:
-        result = dict()
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id, order1, order2, order3, weight FROM reference_samples"
-            )
-            raw_data = cursor.fetchall()
-            for data in raw_data:
-                order_1 = [part.split(",") for part in data[1].split(";")]
-                order_2 = [part.split(",") for part in data[2].split(";")]
-                order_3 = [part.split(",") for part in data[3].split(";")]
-                result[data[0]] = [order_1, order_2, order_3]
-        return result
-
-    def get_reference_samples_scuffed(self) -> list[dict]:
-        result = []
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id, order1, order2, order3, weight FROM reference_samples"
-            )
-            raw_data = cursor.fetchall()
-            for data in raw_data:
-                result.append(
-                    {
-                        "id": data[0],
-                        "order1": data[1],
-                        "order2": data[2],
-                        "order3": data[3],
-                        "weight": data[4],
-                    }
-                )
-        return result
-
-    def insert_new_samples(self, samples: list[dict]):
-        with self.connection.cursor() as cursor:
-            for sample in samples:
-                cursor.execute(
-                    "INSERT INTO reference_samples (id, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s",
-                    (
-                        sample["id"],
-                        sample["order1"],
-                        sample["order2"],
-                        sample["order3"],
-                        sample["weight"],
-                        sample["order1"],
-                        sample["order2"],
-                        sample["order3"],
-                        sample["weight"],
-                    ),
-                )
-            self.connection.commit()
-
-    def load_json_data(self, json_file_name):
-        with open(json_file_name, "r", encoding="utf-8") as file:
-            json_data = json.load(file)
-            self.insert_new_samples(json_data)
-
-    def __del__(self):
-        self.connection.close()
-
-
 class ReferenceSample:
     def __init__(
         self,
@@ -95,7 +14,6 @@ class ReferenceSample:
         order3: list[list[str]],
         weight: float,
     ):
-        psycopg2.extras.register_uuid()
         self.id = id
         self.part = part
         self.order1 = order1
@@ -114,6 +32,7 @@ class Database:
     def __init__(
         self, user_name: str, password: str, db_name: str, host: str, port: int
     ):
+        psycopg2.extras.register_uuid()
         self.connection = psycopg2.connect(
             dbname=db_name, user=user_name, password=password, host=host, port=port
         )
@@ -154,6 +73,50 @@ class Database:
                 )
         return result
 
+    def dump_json(self, file_name):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, part, order1, order2, order3, weight FROM reference_samples"
+            )
+            raw_data = cursor.fetchall()
+
+        def data_sample_to_dict(sample):
+            result = dict()
+            result["id"] = str(sample[0])
+            result["part"] = sample[1]
+            result["order1"] = sample[2]
+            result["order2"] = sample[3]
+            result["order3"] = sample[4]
+            result["weight"] = sample[5]
+            return result
+
+        export_data = list(map(data_sample_to_dict, raw_data))
+        with open(file_name, "w") as dump_file:
+            json.dump(export_data, dump_file)
+
+    def load_json(self, file_name):
+        with open(file_name, "r") as dump_file:
+            import_data = json.load(dump_file)
+        with self.connection.cursor() as cursor:
+            for data in import_data:
+                cursor.execute(
+                    "INSERT INTO reference_samples (id, part, order1, order2, order3, weight) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id, part) DO UPDATE SET order1=%s, order2=%s, order3=%s, weight=%s, part=%s",
+                    (
+                        UUID(data["id"]),
+                        int(data["part"]),
+                        data["order1"],
+                        data["order2"],
+                        data["order3"],
+                        float(data["weight"]),
+                        data["order1"],
+                        data["order2"],
+                        data["order3"],
+                        float(data["weight"]),
+                        int(data["part"]),
+                    ),
+                )
+            self.connection.commit()
+
     def insert_new_samples(self, samples: list[ReferenceSample]):
         with self.connection.cursor() as cursor:
             for sample in samples:
@@ -183,7 +146,7 @@ class Database:
 
 
 if __name__ == "__main__":
-    db = Database("postgres", "password", "postgres", "localhost", 5432)
+    db = Database("EngineUser", "Bstu31", "testDb", "localhost", 5435)
     db.clear_table()
     a = []
     a.append(
@@ -208,13 +171,6 @@ if __name__ == "__main__":
     )
     db.insert_new_samples(a)
     print(db.get_reference_samples())
-    # db.load_json_data("test_db.json")
-    # print(db.get_reference_samples())
-    # print(db.get_reference_samples())
-    # data = []
-    # data.append({"id": "1234", "order1": "asda", "order2": "dhtye", "order3": "mfgk", "weight": 0.375})
-    # data.append({"id": "123", "order1": "asda", "order2": "dhtye", "order3": "mfgk", "weight": 0.875})
-    # data.append({"id": "1234", "order1": "asda", "order2": "dhtye", "order3": "mfgk", "weight": 0.675})
-    # db.insert_new_samples(data)
-    # print(db.get_reference_samples())
-    # print(db.get_reference_samples_scuffed())
+    db.dump_json("db_dump.json")
+    db.load_json("db_dump.json")
+    print(db.get_reference_samples())
