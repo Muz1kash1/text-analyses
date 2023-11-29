@@ -23,4 +23,4 @@ RUN python -c "import nltk; nltk.download('averaged_perceptron_tagger_ru')"
 COPY . .
 
 # Команда для запуска кода при запуске контейнера
-CMD ["python", "text_similarity_engine.py", "0.1"]
+CMD ["python", "./src/text_similarity_engine.py"]
