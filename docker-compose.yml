@@ -2,7 +2,7 @@ version: '3.9'
 services:
   rabbitmq:
     container_name: "rabbitmq"
-    hostname: "rabbit"
+    hostname: ${MQ_HOST_NAME}
     image: rabbitmq:3-management-alpine
     environment:
       - RABBITMQ_DEFAULT_USER=guest
@@ -20,11 +20,11 @@ services:
     container_name: postgres_container
     image: postgres:15.2-alpine
     environment:
-      POSTGRES_DB: "testDb"
-      POSTGRES_USER: "EngineUser"
-      POSTGRES_PASSWORD: "Bstu31"
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5435:5432"
+      - ${DB_PORT}:5432
     volumes:
       - db:/var/lib/postgresql/data
     healthcheck:
@@ -47,6 +47,8 @@ services:
       - postgres
     deploy:
       replicas: 3
+    environment:
+      SIMILARITY_BORDER=${SIMILARITY_BORDER}
 volumes:
   db:
     driver: local
