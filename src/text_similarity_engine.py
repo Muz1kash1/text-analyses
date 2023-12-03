@@ -287,7 +287,7 @@ def get_text_id(fragment_id, text_id_length=6):
     return fragment_id[:text_id_length]
 
 
-def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
+def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary: dict):
     """
     Обновляет словарь весов для фрагмента текста на основе сравнения признаков с эталонным фрагментом.
 
@@ -322,8 +322,12 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
             if max_weight < current_weight:
                 max_pair = current_pair
                 max_weight = current_weight
+    
+    if fragment_id in dictionary.keys():
+        dictionary[fragment_id] = max(max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1])
+    else:
+        dictionary[fragment_id] = max_pair
 
-    dictionary[fragment_id] = max(max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1])
     return dictionary
 
 
