@@ -3,10 +3,10 @@ import json
 import logging
 import os
 import re
-import sys
 import tempfile
 import uuid
 from concurrent.futures import ProcessPoolExecutor
+
 
 import pika
 import pymorphy2
@@ -209,8 +209,13 @@ def extract_third_signs(signs_list: list[list[str]]) -> list[list[str]]:
     elif length % 3 == 1:
         signs.append(get_nouns(signs_list[-1]))
 
-    # Возвращение списка признаков третьего уровня
     return signs
+    # # Обработка оставшихся неполных троек признаков второго уровня
+    # if length % 3:
+    #     signs.append(get_nouns(signs_list[-2] + signs_list[-1]))
+    #
+    # # Возвращение списка признаков третьего уровня
+    # return signs
 
 
 def generate_signatures(fragment: list[str]) -> list[list[list[str]]]:
@@ -412,6 +417,7 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
             sign_dict[fragment_id] = new_reference_sample
             # Если текст является эталонным, то сохраняем его в отдельном словаре вида uuid_part: label и пропускаем
             if text_sample.label != "?":
+                logging.info(f"Got etalon: {int(text_sample.label)}")
                 new_etalon_weights[fragment_id] = int(text_sample.label)
                 continue
             #
@@ -449,9 +455,9 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
     target_fragments: list[ReferenceSample] = []
 
     # Расчет весов для фрагментов текста
-    for fragment_id in dict_1.keys():
+    for fragment_id in sign_dict.keys():
         # Если фрагмент является эталонным, то берем его эталонное значение
-        if fragment_id in new_etalon_weights:
+        if fragment_id in new_etalon_weights.keys():
             sign_dict[fragment_id].weight = new_etalon_weights[fragment_id]
         # Иначе расчитываем по весам, полученным при сравнении с другими эталонными значениями
         else:
@@ -464,6 +470,8 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
         # Проверка, является ли фрагмент текста целевым
         if sign_dict[fragment_id].weight > similarity_border:
             target_fragments.append(sign_dict[fragment_id])
+    
+    logging.info(sign_dict)
 
     # Обновление данных базы данных
     etalons_data.extend(sign_dict.values())
@@ -490,6 +498,8 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
 
 
 if __name__ == "__main__":
+    logging.getLogger("pika").propagate = False
+    logging.getLogger('pymorphy2').propagate = False
     # Загрузить переменные окружения из файла .env
     load_dotenv()
 
