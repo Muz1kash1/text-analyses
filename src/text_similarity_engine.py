@@ -10,10 +10,9 @@ from concurrent.futures import ProcessPoolExecutor
 
 import pika
 import pymorphy2
+from database import Database, ReferenceSample
 from dotenv import load_dotenv
 from nltk import pos_tag, sent_tokenize, word_tokenize
-
-from database import Database, ReferenceSample
 
 
 def pymorphy2_311_hotfix():
@@ -205,8 +204,10 @@ def extract_third_signs(signs_list: list[list[str]]) -> list[list[str]]:
         signs.append(get_nouns(rough_list))
 
     # Обработка оставшихся неполных троек признаков второго уровня
-    if length % 3:
+    if length % 3 == 2:
         signs.append(get_nouns(signs_list[-2] + signs_list[-1]))
+    elif length % 3 == 1:
+        signs.append(get_nouns(signs_list[-1]))
 
     # Возвращение списка признаков третьего уровня
     return signs
@@ -311,8 +312,7 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary: dict)
     """
     # Получение списка весов для каждого признака относительно эталонного фрагмента
     # составляем список самых высоких соотношений веса к количеству признаков с при сравнении всех
-    
-    
+
     max_pair = compare_signatures(sign_list[0], etalon_fragment[0])
     max_weight = max_pair[0] / max_pair[1]
     for sign in sign_list[1:]:
@@ -322,14 +322,15 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary: dict)
             if max_weight < current_weight:
                 max_pair = current_pair
                 max_weight = current_weight
-    
+
     if fragment_id in dictionary.keys():
-        dictionary[fragment_id] = max(max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1])
+        dictionary[fragment_id] = max(
+            max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1]
+        )
     else:
         dictionary[fragment_id] = max_pair
 
     return dictionary
-
 
     # weights_list = [
     #     sorted(
