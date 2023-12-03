@@ -310,19 +310,36 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
     {'123456_001': [2, 3, 2, 3]}
     """
     # Получение списка весов для каждого признака относительно эталонного фрагмента
-    weights_list = [
-        sorted(
-            [compare_signatures(sign, etalon_sign) for etalon_sign in etalon_fragment],
-            key=lambda x: x[0] / x[1],
-        )[-1]
-        for sign in sign_list
-    ]
+    # составляем список самых высоких соотношений веса к количеству признаков с при сравнении всех
+    
+    
+    max_pair = compare_signatures(sign_list[0], etalon_fragment[0])
+    max_weight = max_pair[0] / max_pair[1]
+    for sign in sign_list[1:]:
+        for etalon in etalon_fragment[1:]:
+            current_pair = compare_signatures(sign, etalon)
+            current_weight = current_pair[0] / current_pair[1]
+            if max_weight < current_weight:
+                max_pair = current_pair
+                max_weight = current_weight
 
-    # Обновление словаря весов для данного фрагмента текста
-    dictionary[fragment_id] = sorted(weights_list, key=lambda x: x[0] / x[1])[-1]
-
-    # Возвращение обновленного словаря
+    dictionary[fragment_id] = max(max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1])
     return dictionary
+
+
+    # weights_list = [
+    #     sorted(
+    #         [compare_signatures(sign, etalon_sign) for etalon_sign in etalon_fragment],
+    #         key=lambda x: x[0] / x[1],
+    #     )[-1]
+    #     for sign in sign_list
+    # ]
+    #
+    # # Обновление словаря весов для данного фрагмента текста
+    # dictionary[fragment_id] = sorted(weights_list, key=lambda x: x[0] / x[1])[-1]
+    #
+    # # Возвращение обновленного словаря
+    # return dictionary
 
 
 class InputData:
