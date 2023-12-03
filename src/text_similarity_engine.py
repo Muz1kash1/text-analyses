@@ -28,6 +28,8 @@ def pymorphy2_311_hotfix():
 
     setattr(BaseAnalyzerUnit, "_get_param_names", _get_param_names_311)
 
+pymorphy2_311_hotfix()
+morph = pymorphy2.MorphAnalyzer()
 
 def normalize_word(word: str) -> str:
     """
@@ -44,7 +46,6 @@ def normalize_word(word: str) -> str:
     "бежать"
     """
     # Инициализация морфологического анализатора
-    morph = pymorphy2.MorphAnalyzer()
 
     # Получение разбора слова и выбор первого варианта (наиболее вероятного)
     parsed_word = morph.parse(word)[0]
@@ -513,7 +514,6 @@ if __name__ == "__main__":
     similarity_border = (
         float(val) if (val := os.getenv("SIMILARITY_BORDER")) is not None else 0.7
     )
-    pymorphy2_311_hotfix()
     # Настройка логера
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
