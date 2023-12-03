@@ -3,17 +3,16 @@ import json
 import logging
 import os
 import re
-import sys
 import tempfile
 import uuid
 from concurrent.futures import ProcessPoolExecutor
 
+
 import pika
 import pymorphy2
+from database import Database, ReferenceSample
 from dotenv import load_dotenv
 from nltk import pos_tag, sent_tokenize, word_tokenize
-
-from database import Database, ReferenceSample
 
 
 def pymorphy2_311_hotfix():
@@ -205,11 +204,18 @@ def extract_third_signs(signs_list: list[list[str]]) -> list[list[str]]:
         signs.append(get_nouns(rough_list))
 
     # Обработка оставшихся неполных троек признаков второго уровня
-    if length % 3:
+    if length % 3 == 2:
         signs.append(get_nouns(signs_list[-2] + signs_list[-1]))
+    elif length % 3 == 1:
+        signs.append(get_nouns(signs_list[-1]))
 
-    # Возвращение списка признаков третьего уровня
     return signs
+    # # Обработка оставшихся неполных троек признаков второго уровня
+    # if length % 3:
+    #     signs.append(get_nouns(signs_list[-2] + signs_list[-1]))
+    #
+    # # Возвращение списка признаков третьего уровня
+    # return signs
 
 
 def generate_signatures(fragment: list[str]) -> list[list[list[str]]]:
@@ -287,7 +293,7 @@ def get_text_id(fragment_id, text_id_length=6):
     return fragment_id[:text_id_length]
 
 
-def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
+def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary: dict):
     """
     Обновляет словарь весов для фрагмента текста на основе сравнения признаков с эталонным фрагментом.
 
@@ -310,19 +316,40 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary):
     {'123456_001': [2, 3, 2, 3]}
     """
     # Получение списка весов для каждого признака относительно эталонного фрагмента
-    weights_list = [
-        sorted(
-            [compare_signatures(sign, etalon_sign) for etalon_sign in etalon_fragment],
-            key=lambda x: x[0] / x[1],
-        )[-1]
-        for sign in sign_list
-    ]
+    # составляем список самых высоких соотношений веса к количеству признаков с при сравнении всех
 
-    # Обновление словаря весов для данного фрагмента текста
-    dictionary[fragment_id] = sorted(weights_list, key=lambda x: x[0] / x[1])[-1]
+    max_pair = compare_signatures(sign_list[0], etalon_fragment[0])
+    max_weight = max_pair[0] / max_pair[1]
+    for sign in sign_list[1:]:
+        for etalon in etalon_fragment[1:]:
+            current_pair = compare_signatures(sign, etalon)
+            current_weight = current_pair[0] / current_pair[1]
+            if max_weight < current_weight:
+                max_pair = current_pair
+                max_weight = current_weight
 
-    # Возвращение обновленного словаря
+    if fragment_id in dictionary.keys():
+        dictionary[fragment_id] = max(
+            max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1]
+        )
+    else:
+        dictionary[fragment_id] = max_pair
+
     return dictionary
+
+    # weights_list = [
+    #     sorted(
+    #         [compare_signatures(sign, etalon_sign) for etalon_sign in etalon_fragment],
+    #         key=lambda x: x[0] / x[1],
+    #     )[-1]
+    #     for sign in sign_list
+    # ]
+    #
+    # # Обновление словаря весов для данного фрагмента текста
+    # dictionary[fragment_id] = sorted(weights_list, key=lambda x: x[0] / x[1])[-1]
+    #
+    # # Возвращение обновленного словаря
+    # return dictionary
 
 
 class InputData:
@@ -390,6 +417,7 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
             sign_dict[fragment_id] = new_reference_sample
             # Если текст является эталонным, то сохраняем его в отдельном словаре вида uuid_part: label и пропускаем
             if text_sample.label != "?":
+                logging.info(f"Got etalon: {int(text_sample.label)}")
                 new_etalon_weights[fragment_id] = int(text_sample.label)
                 continue
             #
@@ -427,9 +455,9 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
     target_fragments: list[ReferenceSample] = []
 
     # Расчет весов для фрагментов текста
-    for fragment_id in dict_1.keys():
+    for fragment_id in sign_dict.keys():
         # Если фрагмент является эталонным, то берем его эталонное значение
-        if fragment_id in new_etalon_weights:
+        if fragment_id in new_etalon_weights.keys():
             sign_dict[fragment_id].weight = new_etalon_weights[fragment_id]
         # Иначе расчитываем по весам, полученным при сравнении с другими эталонными значениями
         else:
@@ -442,6 +470,8 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
         # Проверка, является ли фрагмент текста целевым
         if sign_dict[fragment_id].weight > similarity_border:
             target_fragments.append(sign_dict[fragment_id])
+    
+    logging.info(sign_dict)
 
     # Обновление данных базы данных
     etalons_data.extend(sign_dict.values())
@@ -468,6 +498,8 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
 
 
 if __name__ == "__main__":
+    logging.getLogger("pika").propagate = False
+    logging.getLogger('pymorphy2').propagate = False
     # Загрузить переменные окружения из файла .env
     load_dotenv()
 

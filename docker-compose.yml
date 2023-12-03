@@ -26,7 +26,7 @@ services:
     ports:
       - ${DB_PORT}:5432
     volumes:
-      - ./db:/var/lib/postgresql/data
+      - db:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL","pg_isready -U EngineUser -d testDb" ]
       interval: 10s
