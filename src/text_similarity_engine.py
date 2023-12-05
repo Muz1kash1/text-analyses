@@ -124,7 +124,7 @@ def extract_first_signs(fragment: list[str]) -> list[list[str]]:
         cleaned_word_list = list(filter(("").__ne__, cleaned_word_list))
 
         # Нормализация слов и добавление их в список признаков
-        signs.append(list(set(map(normalize_word, cleaned_word_list))))
+        signs.append(list(map(normalize_word, cleaned_word_list)))
 
     # Возвращение списка признаков первого уровня
     return signs
