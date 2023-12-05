@@ -465,7 +465,7 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
             sign_dict[fragment_id].weight = (
                 3 * dict_1[fragment_id]
                 + 2 * dict_2[fragment_id]
-                + dict_3[fragment_id][0]
+                + dict_3[fragment_id]
             ) / 6
 
         # Проверка, является ли фрагмент текста целевым
