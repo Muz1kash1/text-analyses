@@ -359,6 +359,22 @@ class InputData:
         self.text = text
         self.label = label
 
+def read_data_from_json(json_string: str) -> list[InputData]:
+    """
+    Функция для перевода json-строки из Rabbit в список объектов для анализа текста.
+
+    Параметры:
+        - json_string (str): json-строка с данными для анализа
+
+    Возвращает:
+        - list[InputData]: список замапанных в объекты данных для анализа
+    """
+    texts_data: list[InputData] = []
+    json_data = json.loads(json_string);
+    for item in json_data:
+        texts_data.append(InputData(uuid.uuid4(), item["text"], item["label"]))
+    return texts_data;
+    
 
 def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=5):
     """
@@ -380,12 +396,8 @@ def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=
     >>> main_check('input_data.json', 'database.json', similarity_border=0.1, max_series=5, id_legend=[6, 3])
     ({'123456': 'Это текст'}, {'123456_001': [['Это предложение.'], 0.8]})
     """
-    # Чтение входных данных из файла JSON
-    texts_data: list[InputData] = []
-    with open(input_filename, "r", encoding="utf-8") as read_file:
-        json_data = json.load(read_file)
-        for item in json_data:
-            texts_data.append(InputData(uuid.uuid4(), item["text"], item["label"]))
+    # Чтение входных данных из json-строки в список объектов
+    texts_data = read_data_from_json(input_data);
 
     # Чтение данных эталонов из файла JSON
     etalons_data = db.get_reference_samples()
