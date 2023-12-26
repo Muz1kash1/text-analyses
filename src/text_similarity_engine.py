@@ -360,12 +360,12 @@ class InputData:
         self.label = label
 
 
-def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5):
+def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=5):
     """
     Основная функция для проверки схожести фрагментов текста с эталонами и обновления базы данных.
 
     Параметры:
-    - input_filename (str): Имя файла с входными данными в формате JSON.
+    - input_data (str): Имя файла с входными данными в формате JSON.
     - db (str): Обертка над Postgres клиентом.
     - similarity_border (float): Порог схожести для определения, является ли фрагмент текста целевым.
     - max_series (int): Максимальное количество предложений в одном фрагменте текста.
@@ -528,17 +528,18 @@ if __name__ == "__main__":
     queue = channel.queue_declare("texts_analysis")
     queue_name = queue.method.queue
 
-    def callback(ch, method, properties, body):
-        payload = json.loads(body.decode())
-
-        with tempfile.NamedTemporaryFile(
-            mode="w+", delete=False, encoding="utf-8"
-        ) as temp_file:
-            json.dump(payload, temp_file, ensure_ascii=False)
-            temp_file_name = temp_file.name
+    def callback(ch, method, properties, body: bytes):
+        payload = body.decode();
+        # payload = json.loads(body.decode())
+        #
+        # with tempfile.NamedTemporaryFile(
+        #     mode="w+", delete=False, encoding="utf-8"
+        # ) as temp_file:
+        #     json.dump(payload, temp_file, ensure_ascii=False)
+        #     temp_file_name = temp_file.name
 
         # Прямо передаем строку JSON в функцию main_check
-        _, target_fragments = main_check(temp_file_name, db, similarity_border)
+        _, target_fragments = main_check(payload, db, similarity_border)
         # Логирование результата обработки
         logger.info(target_fragments)
 
