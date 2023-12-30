@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import re
-import tempfile
 import uuid
 from concurrent.futures import ProcessPoolExecutor
 
@@ -28,8 +27,10 @@ def pymorphy2_311_hotfix():
 
     setattr(BaseAnalyzerUnit, "_get_param_names", _get_param_names_311)
 
+
 pymorphy2_311_hotfix()
 morph = pymorphy2.MorphAnalyzer()
+
 
 def normalize_word(word: str) -> str:
     """
@@ -294,65 +295,6 @@ def get_text_id(fragment_id, text_id_length=6):
     return fragment_id[:text_id_length]
 
 
-def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary: dict):
-    """
-    Обновляет словарь весов для фрагмента текста на основе сравнения признаков с эталонным фрагментом.
-
-    Параметры:
-    - sign_list (list): Список признаков для данного фрагмента текста.
-    - etalon_fragment (list): Эталонный фрагмент текста, представленный списком признаков.
-    - fragment_id (str): Идентификатор фрагмента текста.
-    - dictionary (dict): Словарь весов для фрагментов текста.
-
-    Возвращает:
-    - dict: Обновленный словарь весов для фрагментов текста.
-
-    Пример использования:
-    >>> update_dictionary(
-    ...     [['предложение'], ['предложение']],
-    ...     [['это', 'предложение'], ['и', 'это', 'еще', 'одно', 'предложение']],
-    ...     '123456_001',
-    ...     {'123456_001': [2, 3]}
-    ... )
-    {'123456_001': [2, 3, 2, 3]}
-    """
-    # Получение списка весов для каждого признака относительно эталонного фрагмента
-    # составляем список самых высоких соотношений веса к количеству признаков с при сравнении всех
-
-    max_pair = compare_signatures(sign_list[0], etalon_fragment[0])
-    max_weight = max_pair[0] / max_pair[1]
-    for sign in sign_list[1:]:
-        for etalon in etalon_fragment[1:]:
-            current_pair = compare_signatures(sign, etalon)
-            current_weight = current_pair[0] / current_pair[1]
-            if max_weight < current_weight:
-                max_weight = current_weight
-
-    max_weight = 1 if max_weight > 1 else max_weight 
-    if fragment_id in dictionary.keys():
-        dictionary[fragment_id] = max(
-            max_weight, dictionary[fragment_id]
-        )
-    else:
-        dictionary[fragment_id] = max_weight
-
-    return dictionary
-
-    # weights_list = [
-    #     sorted(
-    #         [compare_signatures(sign, etalon_sign) for etalon_sign in etalon_fragment],
-    #         key=lambda x: x[0] / x[1],
-    #     )[-1]
-    #     for sign in sign_list
-    # ]
-    #
-    # # Обновление словаря весов для данного фрагмента текста
-    # dictionary[fragment_id] = sorted(weights_list, key=lambda x: x[0] / x[1])[-1]
-    #
-    # # Возвращение обновленного словаря
-    # return dictionary
-
-
 class InputData:
     def __init__(self, id: uuid.UUID, text: str, label: str):
         self.id = id
@@ -360,12 +302,103 @@ class InputData:
         self.label = label
 
 
-def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5):
+def read_data_from_json(json_string: str) -> list[InputData]:
+    """
+    Функция для перевода json-строки из Rabbit в список объектов для анализа текста.
+
+    Параметры:
+        - json_string (str): json-строка с данными для анализа
+
+    Возвращает:
+        - list[InputData]: список замапанных в объекты данных для анализа
+    """
+    texts_data: list[InputData] = []
+    json_data = json.loads(json_string)
+    for item in json_data:
+        texts_data.append(InputData(uuid.uuid4(), item["text"], item["label"]))
+    return texts_data
+
+
+def generate_text_fragments(
+    input_data: list[InputData], max_series=5
+) -> tuple[list[ReferenceSample], list[ReferenceSample]]:
+    undefined_samples: list[ReferenceSample] = []
+    predefined_samples: list[ReferenceSample] = []
+    for text_sample in input_data:
+        fragments = split_text_into_fragments(text_sample.text, max_series)
+        for i, fragment in enumerate(fragments):
+            new_reference_sample = ReferenceSample(
+                id=text_sample.id, part=i, order1=[], order2=[], order3=[], weight=0
+            )
+            (
+                new_reference_sample.order1,
+                new_reference_sample.order2,
+                new_reference_sample.order3,
+            ) = generate_signatures(fragment)
+            if text_sample.label != "?":
+                new_reference_sample.weight = int(text_sample.label)
+                predefined_samples.append(new_reference_sample)
+            else:
+                undefined_samples.append(new_reference_sample)
+    return undefined_samples, predefined_samples
+
+
+def find_max_order_weight(undefined_fragment_order, etalon_text_fragment_orders):
+    max_pair = compare_signatures(
+        undefined_fragment_order, etalon_text_fragment_orders[0]
+    )
+    max_weight = max_pair[0] / max_pair[1]
+
+    for etalon_fragment_order in etalon_text_fragment_orders:
+        current_pair = compare_signatures(
+            undefined_fragment_order, etalon_fragment_order
+        )
+        current_weight = current_pair[0] / current_pair[1]
+        if max_weight < current_weight:
+            max_weight = current_weight
+    max_weight = 1 if max_weight > 1 else max_weight
+    return max_weight
+
+
+def check_text_fragments_for_similarity(
+    undefined_text_fragments: list[ReferenceSample],
+    etalon_text_fragments: list[ReferenceSample],
+):
+    etalon_order_1 = [etalon.order1 for etalon in etalon_text_fragments]
+    etalon_order_2 = [etalon.order2 for etalon in etalon_text_fragments]
+    etalon_order_3 = [etalon.order3 for etalon in etalon_text_fragments]
+    for i in range(len(undefined_text_fragments)):
+        with ProcessPoolExecutor(max_workers=3) as executor:
+            max_weight_order_1_future = executor.submit(
+                find_max_order_weight,
+                undefined_text_fragments[i].order1,
+                etalon_order_1,
+            )
+            max_weight_order_2_future = executor.submit(
+                find_max_order_weight,
+                undefined_text_fragments[i].order2,
+                etalon_order_2,
+            )
+            max_weight_order_3_future = executor.submit(
+                find_max_order_weight,
+                undefined_text_fragments[i].order3,
+                etalon_order_3,
+            )
+            weight_order_1 = max_weight_order_1_future.result()
+            weight_order_2 = max_weight_order_2_future.result()
+            weight_order_3 = max_weight_order_3_future.result()
+        undefined_text_fragments[i].weight = (
+            3 * weight_order_1 + 2 * weight_order_2 + weight_order_3
+        ) / 6
+
+
+
+def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=5):
     """
     Основная функция для проверки схожести фрагментов текста с эталонами и обновления базы данных.
 
     Параметры:
-    - input_filename (str): Имя файла с входными данными в формате JSON.
+    - input_data (str): Имя файла с входными данными в формате JSON.
     - db (str): Обертка над Postgres клиентом.
     - similarity_border (float): Порог схожести для определения, является ли фрагмент текста целевым.
     - max_series (int): Максимальное количество предложений в одном фрагменте текста.
@@ -380,127 +413,39 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
     >>> main_check('input_data.json', 'database.json', similarity_border=0.1, max_series=5, id_legend=[6, 3])
     ({'123456': 'Это текст'}, {'123456_001': [['Это предложение.'], 0.8]})
     """
-    # Чтение входных данных из файла JSON
-    texts_data: list[InputData] = []
-    with open(input_filename, "r", encoding="utf-8") as read_file:
-        json_data = json.load(read_file)
-        for item in json_data:
-            texts_data.append(InputData(uuid.uuid4(), item["text"], item["label"]))
 
-    # Чтение данных эталонов из файла JSON
-    etalons_data = db.get_reference_samples()
+    # Чтение входных данных из json-строки в список объектов
+    texts_data = read_data_from_json(input_data)
 
-    # Инициализация словарей и списков для хранения данных
-    dict_1, dict_2, dict_3 = {}, {}, {}
-    new_etalon_weights = {}
-    sign_dict: dict[str, ReferenceSample] = {}
+    # Перевод входных объектов в объекты для записи в базу
+    undefined_text_fragments, new_etalon_fragments = generate_text_fragments(
+        texts_data, max_series
 
-    # Обработка текстовых данных
-    # Получаем отдельные тексты из набора текстов
-    for text_sample in texts_data:
-        # Делим текст на фрагменты
-        fragments = split_text_into_fragments(text_sample.text, max_series)
-        # Проходимся по фрагментам
-        for i, fragment in enumerate(fragments):
-            # Составляем внутренний id в таком виде: uuid_part
-            fragment_id = "_".join([str(text_sample.id), str(i)])
-            # Создаем объект новой обработанной части текста
-            new_reference_sample = ReferenceSample(
-                id=text_sample.id, part=i, order1=[], order2=[], order3=[], weight=0
-            )
-            # Заполняем его признаки
-            (
-                new_reference_sample.order1,
-                new_reference_sample.order2,
-                new_reference_sample.order3,
-            ) = generate_signatures(fragment)
-            # Сохраняем его в словаре обработанных частей текстов по fragment_id
-            sign_dict[fragment_id] = new_reference_sample
-            # Если текст является эталонным, то сохраняем его в отдельном словаре вида uuid_part: label и пропускаем
-            if text_sample.label != "?":
-                logging.info(f"Got etalon: {int(text_sample.label)}")
-                new_etalon_weights[fragment_id] = int(text_sample.label)
-                continue
-            #
-            for etalon in etalons_data:
-                # Проверка, не является ли текущий текст эталоном < БОЛЬШОЙ ВОПРОС
-
-                # Обработка фрагментов текущего текста
-                if etalon.id == text_sample.id:
-                    break
-                # Изменение словарей в 3 разных потоках
-                with ProcessPoolExecutor(max_workers=3) as executor:
-                    dict_1 = executor.submit(
-                        update_dictionary,
-                        new_reference_sample.order1,
-                        etalon.order1,
-                        fragment_id,
-                        dict_1,
-                    ).result()
-                    dict_2 = executor.submit(
-                        update_dictionary,
-                        new_reference_sample.order2,
-                        etalon.order2,
-                        fragment_id,
-                        dict_2,
-                    ).result()
-                    dict_3 = executor.submit(
-                        update_dictionary,
-                        new_reference_sample.order3,
-                        etalon.order3,
-                        fragment_id,
-                        dict_3,
-                    ).result()
-
-    # Инициализация словаря весов для фрагментов текста
-    target_fragments: list[ReferenceSample] = []
-
-    # Расчет весов для фрагментов текста
-    for fragment_id in sign_dict.keys():
-        # Если фрагмент является эталонным, то берем его эталонное значение
-        if fragment_id in new_etalon_weights.keys():
-            sign_dict[fragment_id].weight = new_etalon_weights[fragment_id]
-        # Иначе расчитываем по весам, полученным при сравнении с другими эталонными значениями
-        else:
-            sign_dict[fragment_id].weight = (
-                3 * dict_1[fragment_id]
-                + 2 * dict_2[fragment_id]
-                + dict_3[fragment_id]
-            ) / 6
-
-        # Проверка, является ли фрагмент текста целевым
-        if sign_dict[fragment_id].weight > similarity_border:
-            target_fragments.append(sign_dict[fragment_id])
-    
-    logging.info(sign_dict)
-
-    # Обновление данных базы данных
-    etalons_data.extend(sign_dict.values())
-
-    # Запись обновленных данных в файл базы данных
-    db.insert_new_samples(etalons_data)
-
-    # Формирование результата - целевых фрагментов и содержащих их текстов
-
-    # Получение id текстов, содержащих целевые фрагменты
-    target_text_ids = set([fragment.id for fragment in target_fragments])
-    # Получение текстов в виде словаря вида - uuid: текст
-    result_target_texts = dict(
-        [(text.id, text.text) for text in texts_data if text.id in target_text_ids]
-    )
-    result_target_fragments = dict(
-        [
-            (fragment.id, [fragment.part, fragment.weight])
-            for fragment in target_fragments
-        ]
     )
 
-    return result_target_texts, result_target_fragments
+    # Объединяем данные эталонов с новыми эталонами
+    etalons_data = db.get_reference_samples() + new_etalon_fragments
+
+    # Орпеделяем веса неопределенных фрагментов текстов
+    check_text_fragments_for_similarity(undefined_text_fragments, etalons_data)
+
+    # Собираем в один список новые эталонные фрагменты и взвешенные неопределенные тексты
+    new_data = undefined_text_fragments + new_etalon_fragments
+    db.insert_new_samples(new_data)
+
+    target_fragments = list(
+        filter(
+            lambda fragment: True if fragment.weight > similarity_border else False,
+            undefined_text_fragments,
+        )
+    )
+
+    return target_fragments
 
 
 if __name__ == "__main__":
     logging.getLogger("pika").propagate = False
-    logging.getLogger('pymorphy2').propagate = False
+    logging.getLogger("pymorphy2").propagate = False
     # Загрузить переменные окружения из файла .env
     load_dotenv()
 
@@ -528,17 +473,11 @@ if __name__ == "__main__":
     queue = channel.queue_declare("texts_analysis")
     queue_name = queue.method.queue
 
-    def callback(ch, method, properties, body):
-        payload = json.loads(body.decode())
-
-        with tempfile.NamedTemporaryFile(
-            mode="w+", delete=False, encoding="utf-8"
-        ) as temp_file:
-            json.dump(payload, temp_file, ensure_ascii=False)
-            temp_file_name = temp_file.name
+    def callback(ch, method, properties, body: bytes):
+        payload = body.decode()
 
         # Прямо передаем строку JSON в функцию main_check
-        _, target_fragments = main_check(temp_file_name, db, similarity_border)
+        target_fragments = main_check(payload, db, similarity_border)
         # Логирование результата обработки
         logger.info(target_fragments)
 
