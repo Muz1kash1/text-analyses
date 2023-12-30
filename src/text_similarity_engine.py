@@ -348,6 +348,7 @@ def find_max_order_weight(undefined_fragment_order, etalon_text_fragment_orders)
         undefined_fragment_order, etalon_text_fragment_orders[0]
     )
     max_weight = max_pair[0] / max_pair[1]
+
     for etalon_fragment_order in etalon_text_fragment_orders:
         current_pair = compare_signatures(
             undefined_fragment_order, etalon_fragment_order
@@ -391,6 +392,7 @@ def check_text_fragments_for_similarity(
         ) / 6
 
 
+
 def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=5):
     """
     Основная функция для проверки схожести фрагментов текста с эталонами и обновления базы данных.
@@ -411,12 +413,14 @@ def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=
     >>> main_check('input_data.json', 'database.json', similarity_border=0.1, max_series=5, id_legend=[6, 3])
     ({'123456': 'Это текст'}, {'123456_001': [['Это предложение.'], 0.8]})
     """
+
     # Чтение входных данных из json-строки в список объектов
     texts_data = read_data_from_json(input_data)
 
     # Перевод входных объектов в объекты для записи в базу
     undefined_text_fragments, new_etalon_fragments = generate_text_fragments(
         texts_data, max_series
+
     )
 
     # Объединяем данные эталонов с новыми эталонами
