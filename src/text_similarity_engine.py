@@ -326,15 +326,15 @@ def update_dictionary(sign_list, etalon_fragment, fragment_id, dictionary: dict)
             current_pair = compare_signatures(sign, etalon)
             current_weight = current_pair[0] / current_pair[1]
             if max_weight < current_weight:
-                max_pair = current_pair
                 max_weight = current_weight
 
+    max_weight = 1 if max_weight > 1 else max_weight 
     if fragment_id in dictionary.keys():
         dictionary[fragment_id] = max(
-            max_pair, dictionary[fragment_id], key=lambda x: x[0] / x[1]
+            max_weight, dictionary[fragment_id]
         )
     else:
-        dictionary[fragment_id] = max_pair
+        dictionary[fragment_id] = max_weight
 
     return dictionary
 
@@ -463,9 +463,9 @@ def main_check(input_filename, db: Database, similarity_border=0.1, max_series=5
         # Иначе расчитываем по весам, полученным при сравнении с другими эталонными значениями
         else:
             sign_dict[fragment_id].weight = (
-                3 * dict_1[fragment_id][0] / dict_1[fragment_id][1]
-                + 2 * dict_2[fragment_id][0] / dict_2[fragment_id][1]
-                + dict_3[fragment_id][0] / dict_3[fragment_id][1]
+                3 * dict_1[fragment_id]
+                + 2 * dict_2[fragment_id]
+                + dict_3[fragment_id]
             ) / 6
 
         # Проверка, является ли фрагмент текста целевым
