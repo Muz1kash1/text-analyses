@@ -32,6 +32,10 @@ pymorphy2_311_hotfix()
 morph = pymorphy2.MorphAnalyzer()
 
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 def normalize_word(word: str) -> str:
     """
     Нормализует слово, приводя его к нормальной (базовой) форме с использованием морфологического анализатора.
@@ -344,17 +348,17 @@ def generate_text_fragments(
 
 
 def find_max_order_weight(undefined_fragment_order, etalon_text_fragment_orders):
-    max_pair = compare_signatures(
-        undefined_fragment_order, etalon_text_fragment_orders[0]
-    )
-    max_weight = max_pair[0] / max_pair[1]
-    for etalon_fragment_order in etalon_text_fragment_orders:
-        current_pair = compare_signatures(
-            undefined_fragment_order, etalon_fragment_order
-        )
-        current_weight = current_pair[0] / current_pair[1]
-        if max_weight < current_weight:
-            max_weight = current_weight
+    max_weight = 0
+    for undefined_fragment in undefined_fragment_order:
+        for etalon_fragment_order in etalon_text_fragment_orders:
+            for etalon_fragment in etalon_fragment_order:
+                current_pair = compare_signatures(undefined_fragment, etalon_fragment)
+                try:
+                    current_weight = current_pair[0] / current_pair[1]
+                except ZeroDivisionError:
+                    current_weight = 0
+                if max_weight < current_weight:
+                    max_weight = current_weight
     max_weight = 1 if max_weight > 1 else max_weight
     return max_weight
 
@@ -456,8 +460,6 @@ if __name__ == "__main__":
         float(val) if (val := os.getenv("SIMILARITY_BORDER")) is not None else 0.7
     )
     # Настройка логера
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
 
     db = Database(db_user, db_password, db_name, db_host, db_port)
     # db.load_json_data("db.json")
