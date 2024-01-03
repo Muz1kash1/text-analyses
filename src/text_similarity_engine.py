@@ -299,8 +299,6 @@ def get_text_id(fragment_id, text_id_length=6):
 
 
 def find_max_order_weight(undefined_fragment_order, etalon_text_fragment_orders):
-    logger.warning(undefined_fragment_order)
-    logger.warning(etalon_text_fragment_orders)
     max_weight = 0
     for undefined_fragment in undefined_fragment_order:
         for etalon_fragment_order in etalon_text_fragment_orders:
@@ -487,6 +485,9 @@ if __name__ == "__main__":
     queue = channel.queue_declare("texts_analysis")
     queue_name = queue.method.queue
 
+    result_queue = channel.queue_declare("analyses_results")
+    result_queue_name = result_queue.method.queue
+
     def callback(ch, method, properties, body):
         payload = body.decode()
 
@@ -494,6 +495,17 @@ if __name__ == "__main__":
         target_fragments = main_check(payload, db, similarity_border)
         # Логирование результата обработки
         logger.info(target_fragments)
+        if len(target_fragments) > 0:
+            result = dict()
+            result["id"] = str(target_fragments[0].id)
+            result["weight"] = target_fragments[0].weight
+            result = [result]
+
+            channel.basic_publish(
+                exchange="",
+                body=json.dumps(result, ensure_ascii=False),
+                routing_key=result_queue_name,
+            )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
