@@ -42,7 +42,7 @@ class Database:
         self.connection.autocommit = True
         cursor = self.connection.cursor()
         cursor.execute(
-            "CREATE TABLE IF NOT EXISTS reference_samples (id UUID, part int, order1 TEXT, order2 TEXT, order3 TEXT, weight FLOAT8, theme TEXT PRIMARY KEY(id, part))"
+            "CREATE TABLE IF NOT EXISTS reference_samples (id UUID, part int, order1 TEXT, order2 TEXT, order3 TEXT, weight FLOAT8, theme TEXT, PRIMARY KEY (id, part))"
         )
         cursor.close()
         self.connection.autocommit = False
@@ -52,11 +52,11 @@ class Database:
             cursor.execute("TRUNCATE TABLE reference_samples")
             self.connection.commit()
 
-    def get_reference_samples(self) -> list[ReferenceSample]:
+    def get_reference_samples(self, theme: str) -> list[ReferenceSample]:
         result = []
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT id, part, order1, order2, order3, weight, theme FROM reference_samples"
+                f"SELECT id, part, order1, order2, order3, weight, theme FROM reference_samples WHERE theme='{theme}'"
             )
             raw_data = cursor.fetchall()
             for data in raw_data:
