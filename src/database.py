@@ -55,9 +55,10 @@ class Database:
     def get_reference_samples(self, theme: str) -> list[ReferenceSample]:
         result = []
         with self.connection.cursor() as cursor:
-            cursor.execute(
-                f"SELECT id, part, order1, order2, order3, weight, theme FROM reference_samples WHERE theme='{theme}'"
-            )
+            query = "SELECT id, part, order1, order2, order3, weight, theme FROM reference_samples WHERE theme=%(theme)s"
+            params = {"theme": theme}
+            cursor.execute(query, params)
+
             raw_data = cursor.fetchall()
             for data in raw_data:
                 order_1: list[list[str]] = [
