@@ -6,7 +6,6 @@ import re
 import uuid
 from concurrent.futures import ProcessPoolExecutor
 
-
 import pika
 import pymorphy2
 from database import Database, ReferenceSample
@@ -27,13 +26,14 @@ def pymorphy2_311_hotfix():
 
     setattr(BaseAnalyzerUnit, "_get_param_names", _get_param_names_311)
 
+
 pymorphy2_311_hotfix()
 morph = pymorphy2.MorphAnalyzer()
 
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def normalize_word(word: str) -> str:
     """
@@ -346,12 +346,13 @@ def check_text_fragments_for_similarity(
         ) / 6
 
 
-
 class InputData:
-    def __init__(self, id: uuid.UUID, text: str, label: str):
+    def __init__(self, id: uuid.UUID, text: str, label: str, theme: str):
         self.id = id
         self.text = text
         self.label = label
+        self.theme = theme
+
 
 def read_data_from_json(json_string: str) -> list[InputData]:
     """
@@ -366,7 +367,9 @@ def read_data_from_json(json_string: str) -> list[InputData]:
     texts_data: list[InputData] = []
     json_data = json.loads(json_string)
     for item in json_data:
-        texts_data.append(InputData(uuid.uuid4(), item["text"], item["label"]))
+        texts_data.append(
+            InputData(uuid.uuid4(), item["text"], item["label"], item["theme"])
+        )
     return texts_data
 
 
@@ -379,7 +382,13 @@ def generate_text_fragments(
         fragments = split_text_into_fragments(text_sample.text, max_series)
         for i, fragment in enumerate(fragments):
             new_reference_sample = ReferenceSample(
-                id=text_sample.id, part=i, order1=[], order2=[], order3=[], weight=0
+                id=text_sample.id,
+                part=i,
+                order1=[],
+                order2=[],
+                order3=[],
+                weight=0,
+                theme=text_sample.theme,
             )
             (
                 new_reference_sample.order1,
@@ -392,6 +401,7 @@ def generate_text_fragments(
             else:
                 undefined_samples.append(new_reference_sample)
     return undefined_samples, predefined_samples
+
 
 def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=5):
     """
@@ -421,9 +431,14 @@ def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=
     undefined_text_fragments, new_etalon_fragments = generate_text_fragments(
         texts_data, max_series
     )
+    theme = ""
+    if len(new_etalon_fragments) > 0:
+        theme = new_etalon_fragments[0].theme
+    elif len(undefined_text_fragments) > 0:
+        theme = undefined_text_fragments[0].theme
 
     # Объединяем данные эталонов с новыми эталонами
-    etalons_data = db.get_reference_samples() + new_etalon_fragments
+    etalons_data = db.get_reference_samples(theme) + new_etalon_fragments
 
     # Орпеделяем веса неопределенных фрагментов текстов
     check_text_fragments_for_similarity(undefined_text_fragments, etalons_data)
@@ -444,7 +459,7 @@ def main_check(input_data: str, db: Database, similarity_border=0.1, max_series=
 
 if __name__ == "__main__":
     logging.getLogger("pika").propagate = False
-    logging.getLogger('pymorphy2').propagate = False
+    logging.getLogger("pymorphy2").propagate = False
     # Загрузить переменные окружения из файла .env
     load_dotenv()
 
@@ -470,6 +485,9 @@ if __name__ == "__main__":
     queue = channel.queue_declare("texts_analysis")
     queue_name = queue.method.queue
 
+    result_queue = channel.queue_declare("analyses_results")
+    result_queue_name = result_queue.method.queue
+
     def callback(ch, method, properties, body):
         payload = body.decode()
 
@@ -477,7 +495,19 @@ if __name__ == "__main__":
         target_fragments = main_check(payload, db, similarity_border)
         # Логирование результата обработки
         logger.info(target_fragments)
+        if len(target_fragments) > 0:
+            result = dict()
+            result["id"] = str(target_fragments[0].id)
+            result["weight"] = target_fragments[0].weight
+            result = [result]
+
+            channel.basic_publish(
+                exchange="",
+                body=json.dumps(result, ensure_ascii=False),
+                routing_key=result_queue_name,
+            )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
+
     channel.basic_consume(on_message_callback=callback, queue=queue_name)
     channel.start_consuming()
