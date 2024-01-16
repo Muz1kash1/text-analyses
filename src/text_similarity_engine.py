@@ -368,7 +368,7 @@ def read_data_from_json(json_string: str) -> list[InputData]:
     json_data = json.loads(json_string)
     for item in json_data:
         texts_data.append(
-            InputData(uuid.uuid4(), item["text"], item["label"], item["theme"])
+            InputData(item["id"], item["text"], item["label"], item["theme"])
         )
     return texts_data
 
